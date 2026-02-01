@@ -1,0 +1,40 @@
+{
+    "tools": [
+        {
+            "name": "analyze_data",
+            "module": "tools.scientific_tools",
+            "class": "DataAnalysisTool",
+            "params": {}
+        },
+        {
+            "name": "generate_plot",
+            "module": "tools.scientific_tools",
+            "class": "PlotGeneratorTool",
+            "params": {}
+        },
+        {
+            "name": "statistical_test",
+            "module": "tools.scientific_tools",
+            "class": "StatisticalTestTool",
+            "params": {}
+        },
+        {
+            "name": "symbolic_math",
+            "module": "tools.scientific_tools",
+            "class": "SymbolicMathTool",
+            "params": {}
+        },
+        {
+            "name": "calculate_molecular_weight",
+            "module": "tools.scientific_tools",
+            "class": "MolecularWeightTool",
+            "params": {}
+        }
+    ],
+    "settings": {
+        "default_language": "zh",
+        "log_level": "INFO",
+        "max_retries": 3,
+        "timeout": 30
+    }
+}

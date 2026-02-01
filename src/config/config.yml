@@ -1,0 +1,41 @@
+# DeepLiterature项目配置文件
+# 该文件采用YAML格式，定义了系统运行所需的所有配置参数
+
+deepliterature:  # 服务名称，作为配置的根节点
+  language: <LANG> # 系统语言设置，支持选项: ["zh", "en"]，zh为中文，en为英文
+  
+  llm:  # 大语言模型配置节
+    max_context_length: <MAX_CONTEXT_LENGTH> # 模型最大上下文长度（input + output），控制输入输出token总数
+    llm_model: <LLM_MODEL_TYPE> # 使用的LLM模型类型，可选: ["remote-llm", "remote-reasoning-llm"]
+    
+    remote-llm:  # 标准远程大语言模型配置
+      api_url: <YOUR_API_URL>        # LLM服务的API接口地址
+      api_key: <YOUR_API_KEY>        # API访问密钥，用于身份验证
+      model_name: <YOUR_MODEL_NAME>  # 具体的模型名称，如"gpt-4"、"claude-3"等
+      tokenizer:  # tokenizer配置，用于文本分词和token计数
+        tokenizer_class: <TOKENIZER_CLASS>           # tokenizer类名，如"tiktoken"、"transformers"
+        tokenizer_name_or_path: <TOKENIZER_NAME_OR_PATH>  # tokenizer模型名称或本地路径
+      
+    remote-reasoning-llm:  # 远程推理大语言模型配置（如DeepSeek-R1等具有CoT推理能力的模型）
+      api_url: <YOUR_API_URL>        # 推理LLM服务的API接口地址
+      api_key: <YOUR_API_KEY>        # API访问密钥
+      model_name: <YOUR_MODEL_NAME>  # 推理模型名称，如"deepseek-r1"
+      tokenizer:  # 推理模型的tokenizer配置
+        tokenizer_class: <TOKENIZER_CLASS>           # tokenizer类名
+        tokenizer_name_or_path: <TOKENIZER_NAME_OR_PATH>  # tokenizer资源路径
+
+  search-engine:  # 搜索引擎配置节
+    search_engine: "serp"  # 默认使用的搜索引擎，当前支持"serp"(SerpApi)
+    serp:  # SerpApi配置，提供Google搜索结果API
+      api_url: "https://serpapi.com/search"  # SerpApi的标准接口地址
+      api_key: <YOUR_API_KEY>   # SerpApi访问密钥，需要注册获取
+      gl: <GOOGLE_LOCATION>     # Google搜索的地理位置参数，如"cn"(中国)、"us"(美国)
+      hl: <GOOGLE_LANGUAGE>     # Google搜索的语言参数，如"zh"(中文)、"en"(英文)
+
+  jina:  # Jina AI服务配置，提供网页内容提取和文本处理功能
+    api_url: "https://r.jina.ai/"  # Jina Reader API地址，用于网页内容提取
+    api_key: <YOUR_API_KEY>        # Jina服务访问密钥
+  
+  code-runner:  # 代码执行器配置，用于远程执行Python代码
+    api_url: <YOUR_CODE_RUNNER_API>  # 代码执行服务的API地址，支持Python代码执行和图表生成
+  
