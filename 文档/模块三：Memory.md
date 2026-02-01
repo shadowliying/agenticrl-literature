@@ -1,5 +1,10 @@
 # 模块三：Memory（记忆模块）
 
+> **📌 项目设定提示**
+> - **OrchestratorAgent**：使用 GRPO 微调的 Qwen2.5-7B，负责读取 Memory 状态进行决策
+> - **其他 Agent**：使用 DeepSeek API（AssistantAgent 负责实体提取，与 Entity Memory 交互）
+> - **Memory 与 RL**：Memory 状态是 OrchestratorAgent 的输入之一，影响其决策（如缓存命中→跳过搜索）
+
 ## 📚 知识讲解
 
 ### 1. 为什么需要 Memory？
@@ -35,7 +40,7 @@
 ├─────────────────────────────────────────────────────────┤
 │  Layer 3: Entity Memory (实体记忆)                      │
 │  ├── 存储：Python Dict                                  │
-│  ├── 提取：DeepSeek-R1 LLM                              │
+│  ├── 提取：DeepSeek API（LLM 调用）                     │
 │  ├── 内容：{实体名: 实体描述} 映射表                    │
 │  └── 作用：解析代词，消除指代歧义                       │
 └─────────────────────────────────────────────────────────┘
@@ -179,7 +184,7 @@ Agent: "BERT 是 Google 提出的预训练模型..."
 class EntityMemory:
     def __init__(self, llm):
         self.entities: Dict[str, str] = {}  # {实体名: 描述}
-        self.llm = llm  # DeepSeek-R1
+        self.llm = llm  # DeepSeek API
     
     def extract_entities(self, text: str) -> List[str]:
         """从文本中提取实体"""
@@ -231,11 +236,13 @@ class EntityMemory:
 本项目选择 **LLM 提取**，因为：
 1. 科研实体（模型名、论文名）变化快，NER 模型难以覆盖
 2. 需要理解上下文才能准确判断实体边界
-3. 已有 DeepSeek-R1 实例，边际成本低
+3. 已有 DeepSeek API 实例（与 AssistantAgent 共用），边际成本低
 
 ---
 
 ### 6. Memory 协同工作流程
+
+**关键点**：Memory 贯穿整个流程，OrchestratorAgent（GRPO 微调的 Qwen2.5-7B）在决策时会读取 Memory 状态。
 
 ```
 用户输入: "它的训练数据是什么？"
@@ -253,24 +260,49 @@ class EntityMemory:
 │  计算 query 向量                │
 │  遍历缓存，相似度 > 0.85?       │
 │  ├── 命中 → 返回缓存结果        │
-│  └── 未命中 → 调用搜索 API      │
+│  └── 未命中 → 继续下一步        │
 └─────────────────────────────────┘
               │
               ▼
+┌─────────────────────────────────────────────────────┐
+│  3. OrchestratorAgent 决策（★ GRPO 微调 Qwen2.5-7B）│
+│  ─────────────────────────────────────────────────  │
+│  输入状态包含 Memory 信息：                          │
+│  • 缓存是否命中？                                    │
+│  • 短期记忆中有几轮相关对话？                        │
+│  • 实体记忆中有哪些相关实体？                        │
+│                                                     │
+│  决策输出：                                          │
+│  ├── 缓存命中 → 调用 AssistantAgent 直接生成答案    │
+│  └── 缓存未命中 → 调用 OptimizerAgent 生成搜索词    │
+└─────────────────────────────────────────────────────┘
+              │
+              ▼
 ┌─────────────────────────────────┐
-│  3. Short-term Memory 拼接上下文│
+│  4. Short-term Memory 拼接上下文│
 │  [历史对话] + [当前 query]      │
 │  → 发送给 LLM 生成回答          │
 └─────────────────────────────────┘
               │
               ▼
 ┌─────────────────────────────────┐
-│  4. 更新所有 Memory             │
+│  5. 更新所有 Memory             │
 │  - Short-term: 添加本轮对话     │
 │  - Search Cache: 缓存搜索结果   │
 │  - Entity Memory: 提取新实体    │
 └─────────────────────────────────┘
 ```
+
+**Memory 状态如何影响 RL 决策**：
+
+| Memory 状态 | OrchestratorAgent 决策 | 理由 |
+|-------------|------------------------|------|
+| 搜索缓存命中 | 跳过搜索，直接生成答案 | 节省 API 成本 |
+| 短期记忆有相关对话 | 细化查询而非重新搜索 | 利用已有上下文 |
+| 实体记忆丰富 | 可选择深入研究 | 已有基础知识 |
+| Memory 为空 | 从头开始搜索 | 无可复用信息 |
+
+这就是为什么说 **Memory 是 RL 状态的一部分**——OrchestratorAgent 的决策会受到 Memory 状态的影响，而 RL 训练的目标就是让它学会根据 Memory 状态做出最优决策。
 
 ---
 
@@ -311,9 +343,17 @@ class EntityMemory:
 | 短期记忆存储 | Python List | - |
 | 搜索缓存存储 | Redis | 7.0+ |
 | 语义向量编码 | BGE-base-zh-v1.5 | 768 维 |
-| 实体提取 | DeepSeek-R1 | API 调用 |
+| 实体提取 | DeepSeek API | LLM 调用 |
 | 相似度计算 | Cosine Similarity | 阈值 0.85 |
 | 缓存过期 | TTL | 24 小时 |
+
+**Memory 与 Agent 的关系**：
+
+| Agent | 如何使用 Memory |
+|-------|-----------------|
+| **OrchestratorAgent**（Qwen2.5-7B + GRPO） | 读取 Memory 状态做决策：缓存命中则跳过搜索 |
+| **OptimizerAgent**（DeepSeek API） | 读取实体记忆，优化搜索关键词 |
+| **AssistantAgent**（DeepSeek API） | 读取短期记忆，生成连贯答案；写入实体记忆 |
 
 ---
 
@@ -391,13 +431,13 @@ class EntityMemory:
    # → ["BERT", "GPT", "预训练模型"]
    ```
 
-3. **复用已有 LLM**：项目已有 DeepSeek-R1 实例，边际成本低
+3. **复用已有 LLM**：项目已有 DeepSeek API 实例（与 AssistantAgent 共用），边际成本低
 
 4. **实体缓存**：同一个实体不重复提取
 
 **成本估算**：
 - 平均每轮对话提取 1 次，约 200 tokens
-- DeepSeek-R1 价格：¥1/百万 tokens
+- DeepSeek API 价格：¥1/百万 tokens（DeepSeek-V3）
 - 1000 轮对话成本：约 ¥0.2
 
 **对比传统 NER**：
@@ -418,7 +458,7 @@ class EntityMemory:
    - 平均每轮 500 tokens（query + response）
    - 5 轮 = 2500 tokens 上下文
    - 加上系统 prompt 和搜索结果，总共约 6000 tokens
-   - DeepSeek-R1 上下文窗口 64K，留足空间给思考过程
+   - DeepSeek API 上下文窗口 64K，留足空间给推理过程
 
 2. **信息衰减**：
    - 研究表明，对话中 80% 的指代都指向最近 3 轮的内容
@@ -718,7 +758,7 @@ memory = ConversationEntityMemory(llm=llm)
 
 **本项目的差异化**：
 1. **搜索缓存是核心**：LangChain 没有这个概念
-2. **DeepSeek-R1 实体提取**：比 GPT-3.5 便宜 10 倍
+2. **DeepSeek API 实体提取**：比 GPT-3.5 便宜 10 倍，与其他 Agent 共用实例
 3. **BGE 中文优化**：实体匹配对中文更友好
 
 ---
@@ -968,10 +1008,13 @@ def handle_query(query):
 
 **参考答案**：
 
-**Memory 为 RL 提供状态信息**：
+**核心理解**：Memory 状态是 OrchestratorAgent（Qwen2.5-7B + GRPO）的输入之一，直接影响其决策。
+
+**Memory 为 OrchestratorAgent 提供状态信息**：
 
 ```python
 def get_rl_state():
+    """构建 OrchestratorAgent 的输入状态"""
     state = []
     
     # 1. 从短期记忆提取特征
@@ -997,14 +1040,18 @@ def get_rl_state():
     return np.array(state)  # 总共 384 维
 ```
 
-**Memory 状态如何影响 Action 选择**：
+**Memory 状态如何影响 OrchestratorAgent 决策**：
 
-| Memory 状态 | 推荐 Action |
-|-------------|-------------|
-| 短期记忆有相关对话 | `refine_query`（细化而不是重新搜索）|
-| 搜索缓存命中 | `direct_answer`（无需新搜索）|
-| 实体记忆丰富 | `deep_research`（已有基础，可以深入）|
-| Memory 为空 | `web_search`（从零开始）|
+| Memory 状态 | OrchestratorAgent 决策 | 对应 Agent |
+|-------------|------------------------|------------|
+| 搜索缓存命中 | 跳过搜索，直接生成 | AssistantAgent |
+| 短期记忆有相关对话 | 细化 query | OptimizerAgent |
+| 实体记忆丰富 | 深入研究 | SelectorAgent + ReorchestratorAgent |
+| Memory 为空 | 执行搜索 | webSearch 工具 |
+
+**与奖励函数的关系**：
+- 效率奖励 $E$：缓存命中 → 减少 API 调用 → 效率奖励提升
+- 这就是 GRPO 训练 OrchestratorAgent 要学会的：**根据 Memory 状态做出最优决策**
 
 ---
 
@@ -1269,11 +1316,21 @@ class SearchCache:
 
 ## 📝 学习检查清单
 
+**基础概念**：
 - [ ] 能画出三层 Memory 架构图
 - [ ] 理解短期记忆为什么用 List 而不是向量数据库
 - [ ] 能解释搜索缓存的语义匹配原理
 - [ ] 理解 0.85 相似度阈值的来源
 - [ ] 能说明实体记忆如何解析代词
 - [ ] 理解 Memory 与 RAG 的区别
+
+**与项目整合**：
+- [ ] 理解 OrchestratorAgent（Qwen2.5-7B + GRPO）如何读取 Memory 状态做决策
+- [ ] 能解释"缓存命中→跳过搜索"如何节省 27% API 成本
+- [ ] 理解 Memory 状态是 RL 状态的一部分
+- [ ] 能说明哪个 Agent 负责写入实体记忆（AssistantAgent）
+
+**工程实践**：
 - [ ] 能设计 Memory 的降级方案
-- [ ] 理解 Memory 如何为 RL 提供状态
+- [ ] 理解 Memory 冷启动优化策略
+
