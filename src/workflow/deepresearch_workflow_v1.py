@@ -1,4 +1,4 @@
-﻿# encoding: utf-8  # 文件编码声明
+# encoding: utf-8  # 文件编码声明
 # 结构化流程执行（v1）  # 文件用途说明
 from __future__ import annotations  # 允许类型前向引用
 # 导入类型与依赖  # 分隔说明
@@ -10,19 +10,11 @@ from .state_machine_v1 import State, StateMachine, build_default_context  # 引�
 from memory.memory_layer_v1 import MemoryLayer  # 引入记忆层
 # Handler 类型  # 分隔说明
 Handler = Callable[[Dict[str, Any]], Dict[str, Any]]  # 处理函数类型
+
 # 构建默认处理器  # 分隔说明
 def default_handlers() -> Dict[State, Handler]:  # 默认处理器集合
     return {}  # 默认无处理器
-# 提取验证规则  # 分隔说明
-def extract_validate_rules(plan: Plan) -> Dict[str, Any]:  # 提取验证规则
-    rules: Dict[str, Any] = {}  # 初始化规则
-    for step in plan.steps:  # 遍历步骤
-        if step.action == "VALIDATE":  # 查找验证步骤
-            rules.update(step.metadata)  # 合并元数据
-            rules["success_rules"] = list(step.success_rules)  # 写入成功规则
-            rules["rollback_rules"] = list(step.rollback_rules)  # 写入回退规则
-            break  # 找到即停止
-    return rules  # 返回规则
+
 # 执行主流程  # 分隔说明
 def run_v1(  # 主入口函数
     question: str,  # 用户问题
@@ -37,12 +29,6 @@ def run_v1(  # 主入口函数
     sm = StateMachine()  # 初始化状态机
     context = build_default_context(plan_obj)  # 初始化上下文
     context["question"] = question  # 写入问题
-    plan_rules = extract_validate_rules(plan_obj)  # 提取计划规则
-    context["plan_rules"] = plan_rules  # 写入计划规则
-    if "sufficiency_threshold" in plan_rules:  # 覆盖充分阈值
-        context["sufficiency_threshold"] = float(plan_rules.get("sufficiency_threshold", 0.75))  # 写入阈值
-    if "replan_threshold" in plan_rules:  # 覆盖重规划阈值
-        context["replan_threshold"] = float(plan_rules.get("replan_threshold", 0.60))  # 写入阈值
     handlers_map = handlers or default_handlers()  # 处理器映射
     memory = memory_layer or MemoryLayer()  # 记忆层实例
     state = State.PLAN  # 初始状态
